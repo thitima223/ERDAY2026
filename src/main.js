@@ -2,10 +2,10 @@ import './style.css';
 
 /* CONFIGURATION */
 const CONFIG = {
-  SUPABASE_URL: 'https://YOUR-PROJECT-REF.supabase.co',
-  // SUPABASE_ANON_KEY: 'YOUR_SUPABASE_ANON_KEY',
-  SHEETS_URL: 'https://script.google.com/macros/s/AKfycbwVlW_4rlHfPpWSK1nP9_Gt-UPIXf_DfEvDTNExGlf9Rf9T9bikmVTiYQeCf6dNpH8EPw/exec',
+  SHEETS_URL: 'https://script.google.com/macros/s/AKfycbzNag6w2AijyQsaLPr_EyeKn5f1_3ZBVirGMHdw4ja64FKTJ4hAe9aMQKeVqNUaapRf0g/exec',
   PUBLIC_BASE_URL: 'https://erday2026.vercel.app'
+  // SUPABASE_URL: 'https://YOUR-PROJECT-REF.supabase.co'
+  // SUPABASE_ANON_KEY: 'YOUR_SUPABASE_ANON_KEY',
 };
 
 const LIBS = {
@@ -171,15 +171,17 @@ class SupabaseAPI {
 class SheetsAPI {
   constructor() {
     this.url = CONFIG.SHEETS_URL;
-    this.POLL_MS = 2000;
+    this.POLL_MS = 2500; // ขยับเป็น 2.5 วิให้เซิร์ฟเวอร์ Google หายใจทัน
     this.h = new Set();
     this.timer = null;
     this.last = { scores: {}, state: '', contestants: '' };
+    this._isPolling = false; // ตัวล็อกป้องกันรีเควสต์ซ้อนกัน
   }
+  
   async _get(p) {
     const u = new URL(this.url);
     Object.entries(p).forEach(([k, v]) => u.searchParams.set(k, v));
-    u.searchParams.set('_t', Date.now()); // 👈 ทะลวง Cache! บังคับดึงข้อมูลใหม่จาก Sheet เสมอ
+    u.searchParams.set('_t', Date.now()); // ทะลวงแคช Google เสมอ
     
     if (p.action !== 'all') this._cache = null;
     const r = await fetch(u.toString(), { cache: 'no-store' });
@@ -188,6 +190,7 @@ class SheetsAPI {
     if (p.action === 'all') this._cache = { t: Date.now(), d };
     return d;
   }
+
   _all() {
     if (this._cache && Date.now() - this._cache.t < 800) return Promise.resolve(this._cache.d);
     if (!this._inflight) {
@@ -195,6 +198,7 @@ class SheetsAPI {
     }
     return this._inflight;
   }
+
   async getState() { return (await this._all()).state; }
   async getContestants() { return (await this._all()).contestants; }
   async getScores(m) { return (await this._all()).scores[m]; }
@@ -207,13 +211,13 @@ class SheetsAPI {
         const m = stateObj.active_mode || 'live';
         const key = m + id;
         if (this.last.scores[key] !== undefined) {
-          this.last.scores[key] += 1;
-          for (const h of this.h) {
-            h.onScore && h.onScore({ mode: m, contestant_id: id, votes: this.last.scores[key] });
-          }
+          this.last.scores[key] += 1; // Optimistic Update (โชว์คะแนนขึ้นทันที)
+          for (const h of this.h) h.onScore && h.onScore({ mode: m, contestant_id: id, votes: this.last.scores[key] });
         }
-      } catch(e){}
-      this._poll();
+      } catch(e) {}
+      
+      // สั่งดึงข้อมูลใหม่เบื้องหลัง แบบไม่ให้ชนกับรอบปกติ
+      if(!this._isPolling) this._poll(); 
     }
     return res;
   }
@@ -231,39 +235,43 @@ class SheetsAPI {
   }
   
   async _poll() {
-    let d;
-    try { d = await this._get({ action: 'all' }); } catch { return; }
+    if (this._isPolling) return; // ถ้าของเก่ายังโหลดไม่เสร็จ ให้ข้ามรอบนี้ไปเลย เว็บจะได้ไม่ค้าง
+    this._isPolling = true;
     
-    const st = JSON.stringify(d.state);
-    const ct = JSON.stringify(d.contestants);
-    const stChanged = st !== this.last.state;
-    const ctChanged = ct !== this.last.contestants;
-    
-    // แยกเก็บค่าคะแนนที่เปลี่ยนไปทั้งหมด เพื่อแก้บั๊กการอัปเดตตกหล่น
-    const newScores = {};
-    const scoreChanges = [];
-    
-    for (const m of ['test', 'live']) {
-      for (const id of IDS) {
-        const key = m + id;
-        const v = d.scores[m][id];
-        newScores[key] = v;
-        if (this.last.scores[key] !== v) {
-          scoreChanges.push({ mode: m, contestant_id: id, votes: v });
+    try { 
+      const d = await this._get({ action: 'all' }); 
+      const st = JSON.stringify(d.state);
+      const ct = JSON.stringify(d.contestants);
+      const stChanged = st !== this.last.state;
+      const ctChanged = ct !== this.last.contestants;
+      
+      const newScores = {};
+      const scoreChanges = [];
+      
+      for (const m of ['test', 'live']) {
+        for (const id of IDS) {
+          const key = m + id;
+          const v = d.scores[m][id];
+          newScores[key] = v;
+          if (this.last.scores[key] !== v) {
+            scoreChanges.push({ mode: m, contestant_id: id, votes: v });
+          }
         }
       }
-    }
 
-    this.last.state = st;
-    this.last.contestants = ct;
-    this.last.scores = newScores;
+      this.last.state = st;
+      this.last.contestants = ct;
+      this.last.scores = newScores;
 
-    for (const h of this.h) {
-      if (stChanged) h.onState && h.onState({ ...d.state });
-      if (ctChanged) for (const id of IDS) h.onContestant && h.onContestant({ ...d.contestants[id] });
-      for (const change of scoreChanges) {
-        h.onScore && h.onScore(change);
+      for (const h of this.h) {
+        if (stChanged) h.onState && h.onState({ ...d.state });
+        if (ctChanged) for (const id of IDS) h.onContestant && h.onContestant({ ...d.contestants[id] });
+        for (const change of scoreChanges) h.onScore && h.onScore(change);
       }
+    } catch (err) { 
+      console.error('Sheet Sync Error:', err); 
+    } finally {
+      this._isPolling = false; // ปลดล็อกให้รอบต่อไปทำงานได้
     }
   }
   
