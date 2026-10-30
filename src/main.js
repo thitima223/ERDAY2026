@@ -1,8 +1,6 @@
 import './style.css';
 
-/* =====================================================================
-   CONFIGURATION
-   ===================================================================== */
+/* CONFIGURATION */
 const CONFIG = {
   SUPABASE_URL: 'https://YOUR-PROJECT-REF.supabase.co',
   SUPABASE_ANON_KEY: 'YOUR_SUPABASE_ANON_KEY',
@@ -15,9 +13,7 @@ const LIBS = {
   jszip:    'https://cdn.jsdelivr.net/npm/jszip@3.10.2/dist/jszip.min.js'
 };
 
-/* =====================================================================
-   Utilities
-   ===================================================================== */
+/*Utilities */
 const IDS = Array.from({length:10}, (_, i) => String(i+1).padStart(2, '0'));
 const params = new URLSearchParams(location.search);
 const DEMO = params.get('demo') === '1' || !/YOUR[-_]/.test(CONFIG.SUPABASE_URL + CONFIG.SUPABASE_ANON_KEY) === false;
@@ -121,9 +117,16 @@ function sparkleBurst(x, y, n=36) {
   }
 }
 
-/* =====================================================================
-   Data Layer
-   ===================================================================== */
+function showView(viewId) {
+  ['view-hub', 'view-vote', 'view-scoreboard', 'view-qr', 'view-admin'].forEach(id => {
+    const el = $('#' + id);
+    if (el) el.classList.add('hidden');
+  });
+  const target = $('#' + viewId);
+  if (target) target.classList.remove('hidden');
+}
+
+/* Data Layer */
 class SupabaseAPI {
   constructor() {
     this.c = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY, {
@@ -165,13 +168,14 @@ class SupabaseAPI {
 
 class DemoAPI {
   constructor() {
+    const saved = localStorage.getItem('erday26_demo_state');
     const seed = [42, 37, 37, 29, 51, 18, 24, 12, 33, 8];
-    this.s = {
-      state: { active_mode: 'test', test_open: true, live_open: false, vote_limit: 'unlimited' },
+    this.s = saved ? JSON.parse(saved) : {
+      state: { active_mode: 'live', test_open: true, live_open: true, vote_limit: 'unlimited' },
       contestants: Object.fromEntries(IDS.map(id => [id, { id, name: `Contestant ${id}`, photo_url: '' }])),
       scores: {
         test: Object.fromEntries(IDS.map((id, i) => [id, seed[i]])),
-        live: Object.fromEntries(IDS.map(id => [id, 0]))
+        live: Object.fromEntries(IDS.map((id, i) => [id, seed[i]]))
       },
       votes: [],
       log: []
@@ -180,13 +184,40 @@ class DemoAPI {
     try {
       this.bc = new BroadcastChannel('erday26-demo');
       this.bc.onmessage = e => {
-        if (e.data.t === 'hello') this.bc.postMessage({ t: 'full', s: this.s });
-        else if (e.data.t === 'full') { this.s = e.data.s; this.emit(); }
+        if (e.data.t === 'hello') {
+          this.bc.postMessage({ t: 'full', s: this.s });
+        } else if (e.data.t === 'full') {
+          this.s = e.data.s;
+          this.emit();
+        } else if (e.data.t === 'score') {
+          this.s.scores[e.data.mode][e.data.id] = e.data.votes;
+          for (const h of this.h) {
+            h.onScore && h.onScore({ mode: e.data.mode, contestant_id: e.data.id, votes: e.data.votes });
+          }
+        }
       };
       this.bc.postMessage({ t: 'hello' });
     } catch {}
+
+    window.addEventListener('storage', (e) => {
+      if (e.key === 'erday26_demo_state' && e.newValue) {
+        this.s = JSON.parse(e.newValue);
+        this.emit();
+      }
+    });
   }
-  _commit() { try { this.bc && this.bc.postMessage({ t: 'full', s: this.s }); } catch {} this.emit(); }
+  _commit(lastScore = null) {
+    try {
+      localStorage.setItem('erday26_demo_state', JSON.stringify(this.s));
+      if (this.bc) {
+        if (lastScore) {
+          this.bc.postMessage({ t: 'score', ...lastScore });
+        }
+        this.bc.postMessage({ t: 'full', s: this.s });
+      }
+    } catch {}
+    this.emit();
+  }
   emit() {
     for (const h of this.h) {
       h.onState && h.onState({ ...this.s.state });
@@ -208,8 +239,8 @@ class DemoAPI {
     if (!/^(0[1-9]|10)$/.test(id)) return { ok: false, code: 'invalid' };
     const st = this.s.state, m = st.active_mode, open = m === 'live' ? st.live_open : st.test_open;
     if (!open) return { ok: false, code: 'closed', mode: m };
-    this.s.scores[m][id]++;
-    this._commit();
+    this.s.scores[m][id] = (this.s.scores[m][id] || 0) + 1;
+    this._commit({ mode: m, id, votes: this.s.scores[m][id] });
     return { ok: true, code: 'ok', mode: m };
   }
   async deviceStatus() { return { can_vote: true }; }
@@ -225,8 +256,9 @@ class DemoAPI {
     return true;
   }
   async testAdd(id, n) {
-    this.s.scores[this.s.state.active_mode][id] = Math.max(0, (this.s.scores[this.s.state.active_mode][id] || 0) + n);
-    this._commit();
+    const m = this.s.state.active_mode;
+    this.s.scores[m][id] = Math.max(0, (this.s.scores[m][id] || 0) + n);
+    this._commit({ mode: m, id, votes: this.s.scores[m][id] });
     return true;
   }
   async updateContestant(id, name, photo) {
@@ -241,9 +273,7 @@ class DemoAPI {
   async resetLog() { return []; }
 }
 
-/* =====================================================================
-   App Controller & Views
-   ===================================================================== */
+/* App Controller & Views */
 async function initApp() {
   const isDemo = DEMO;
   let api;
@@ -269,184 +299,205 @@ async function initApp() {
   const qr = params.get('qr');
   const admin = params.get('admin');
 
-  if (v) renderVote(api, v);
+  if (admin !== null) renderAdmin(api);
+  else if (qr !== null) renderQR(api);
   else if (screen) renderScoreboard(api, screen);
-  else if (qr) renderQR(api);
-  else if (admin !== null) renderAdmin(api);
+  else if (v) renderVote(api, v);
   else renderHub();
 }
 
 function renderHub() {
-  $('#app').innerHTML = `
-    <div class="page center fade-in">
-      <p class="hero-sub">Annual Celebration</p>
-      <h1 class="hero-title gold-text">ER DAY 2026</h1>
-      <p class="eyebrow" style="margin-top:.6rem;">Green Glam Night · Popular Vote System</p>
-      <div class="divider"><span>⚜️</span></div>
-      
-      <div class="hub-grid">
-        <a class="hub-card lux" href="${link({ screen: 'live' })}">
-          ` /* + '<div class="ico">🏆</div>' */ + `
-          <div class="ico">
-            <img src="https://img.icons8.com/color/48/trophy.png" alt="Live Scoreboard" width="36" height="36">
-          </div>
-          <h3>Live Scoreboard</h3>
-          <p>จอถ่ายทอดผลคะแนนสด 16:9 สำหรับฉายบนเวทีใหญ่</p>
-        </a>
-        <a class="hub-card lux" href="${link({ v: '01' })}">
-          ` /* + '<div class="ico">✨</div>' */ + `
-          <div class="ico">
-          <img src="https://img.icons8.com/color/48/sparkling.png" alt="Sparkles" width="36" height="36">
-          </div>
-          <h3>Vote Page</h3>
-          <p>หน้าลงคะแนนโหวตสำหรับผู้เข้าร่วมงาน (ตัวอย่างเบอร์ 01)</p>
-        </a>
-        <a class="hub-card lux" href="${link({ qr: '1' })}">
-          ` /* + '<div class="ico">📱</div>' */ + `
-          <div class="ico2">
-  <img src="https://img.icons8.com/bubbles/50/qr-code.png" alt="QR Code Bubbles" width="40" height="40">
-</div>
-          <h3>QR Code Cards</h3>
-          <p>สร้างและพิมพ์ QR Code สำหรับติดประจำโต๊ะหรือป้ายผู้ประกวด</p>
-        </a>
-        <a class="hub-card lux" href="${link({ admin: '' })}">
-          ` /* + '<div class="ico">⚙️</div>' */ + `
-          <div class="ico">
-  <img src="https://img.icons8.com/dusk/64/settings.png" alt="Settings Dusk" width="36" height="36">
-</div>
-          <h3>Admin Control</h3>
-          <p>ระบบจัดการสถานะการโหวต รีเซ็ตคะแนน และข้อมูลผู้ประกวด</p>
-        </a>
-      </div>
-    </div>
-  `;
+  showView('view-hub');
+  $('#hubLinkScoreboard').href = link({ screen: 'live' });
+  $('#hubLinkVote').href = link({ v: '01' });
+  $('#hubLinkQR').href = link({ qr: '1' });
+  $('#hubLinkAdmin').href = link({ admin: '' });
 }
 
 async function renderVote(api, contestantId) {
+  showView('view-vote');
   contestantId = String(contestantId).padStart(2, '0');
-  const cData = (await api.getContestants())[contestantId] || { id: contestantId, name: '' };
+  const contestants = await api.getContestants();
   const state = await api.getState();
   const mode = state.active_mode;
   const isOpen = mode === 'live' ? state.live_open : state.test_open;
 
-  $('#app').innerHTML = `
-    <div class="vote">
-      <div class="brand-sm">ER DAY 2026 · GREEN GLAM NIGHT</div>
-      <h1 class="title-xl brand-lg gold-text">POPULAR VOTE</h1>
-      <div class="status-row">
-        <span class="pill ${mode}">${mode.toUpperCase()} MODE</span>
-        <span class="pill ${isOpen ? 'open' : 'closed'}">
-          <i class="dot"></i>${isOpen ? 'VOTING OPEN' : 'VOTING CLOSED'}
-        </span>
-      </div>
-      <p class="prompt">กดปุ่มด้านล่างเพื่อโหวตให้ผู้ประกวด</p>
+  const modePill = $('#voteModePill');
+  modePill.className = `pill ${mode}`;
+  modePill.textContent = `${mode.toUpperCase()} MODE`;
 
-      <div class="vote-card lux">
-        ${ORN}
-        <div class="photo">${photoHTML(cData, contestantId, '', true)}</div>
-        <div class="c-label">CONTESTANT</div>
-        <div class="c-num gold-text">${contestantId}</div>
-        <div class="c-name">${esc(displayName(cData))}</div>
-        <button id="btnVote" class="btn btn-gold vote-btn" ${isOpen ? '' : 'disabled'}>
-          VOTE NOW
-        </button>
-      </div>
+  const openPill = $('#voteOpenPill');
+  openPill.className = `pill ${isOpen ? 'open' : 'closed'}`;
+  $('#voteOpenText').textContent = isOpen ? 'VOTING OPEN' : 'VOTING CLOSED';
 
-      <p class="vote-note">ระบบจะบันทึกคะแนนเข้าสู่ระบบแบบ Realtime ทันที</p>
-      <div class="vote-foot">EMERGENCY DEPARTMENT · 2026</div>
-    </div>
-  `;
+  const track = $('#voteTrack');
+  const dotsContainer = $('#voteDots');
+  const tpl = $('#tpl-vote-card');
+  track.innerHTML = '';
+  dotsContainer.innerHTML = '';
 
-  $('#btnVote').addEventListener('click', async () => {
-    const btn = $('#btnVote');
-    btn.disabled = true;
-    btn.textContent = 'VOTING...';
-    try {
-      const res = await api.castVote(contestantId, deviceId(), uuid());
-      if (res && res.ok) {
-        sparkleBurst(window.innerWidth / 2, window.innerHeight / 2, 45);
-        $('#app').insertAdjacentHTML('beforeend', `
-          <div class="thanks">
-            <div class="inner">
-              <div class="check">
-                <svg viewBox="0 0 24 24" fill="none" stroke="#064E3B" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M20 6L9 17l-5-5"></path>
-                </svg>
-              </div>
-              <h2 class="gold-text">ขอบคุณสำหรับการโหวต!</h2>
-              <p>คะแนนของคุณสำหรับหมายเลข <b>${contestantId}</b> ถูกบันทึกแล้ว</p>
-              <button class="btn btn-gold" style="margin-top:1.5rem;" onclick="this.closest('.thanks').remove()">ปิด</button>
-            </div>
-          </div>
-        `);
-      } else {
-        toast((res && res.code === 'closed') ? 'ระบบปิดรับคะแนนแล้ว' : 'ไม่สามารถส่งคะแนนได้', true);
+  IDS.forEach((id, index) => {
+    const cData = contestants[id] || { id, name: '' };
+    const node = tpl.content.cloneNode(true);
+    const slide = node.querySelector('.vote-slide');
+    slide.dataset.id = id;
+    slide.dataset.index = index;
+
+    node.querySelector('.photo').innerHTML = photoHTML(cData, id, '', true);
+    node.querySelector('.c-num').textContent = id;
+    node.querySelector('.c-name').textContent = displayName(cData);
+
+    const btn = node.querySelector('.btn-cast-vote');
+    btn.disabled = !isOpen;
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      btn.disabled = true;
+      btn.textContent = 'VOTING...';
+      try {
+        const res = await api.castVote(id, deviceId(), uuid());
+        if (res && res.ok) {
+          sparkleBurst(window.innerWidth / 2, window.innerHeight / 2, 45);
+          $('#thanksContestantId').textContent = id;
+          $('#voteThanksModal').classList.remove('hidden');
+        } else {
+          toast((res && res.code === 'closed') ? 'ระบบปิดรับคะแนนแล้ว' : 'ไม่สามารถส่งคะแนนได้', true);
+        }
+      } catch (err) {
+        toast(errMsg(err), true);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'VOTE NOW';
       }
-    } catch (e) {
-      toast(errMsg(e), true);
-    } finally {
-      btn.disabled = false;
-      btn.textContent = 'VOTE NOW';
-    }
+    };
+
+    track.appendChild(node);
+
+    const dot = document.createElement('button');
+    dot.className = 'vote-dot';
+    dot.setAttribute('aria-label', `Go to contestant ${id}`);
+    dot.onclick = () => updateCarousel(index);
+    dotsContainer.appendChild(dot);
   });
+
+  $('#btnCloseThanks').onclick = () => {
+    $('#voteThanksModal').classList.add('hidden');
+  };
+
+  let currentIndex = Math.max(0, IDS.indexOf(contestantId));
+  if (currentIndex === -1) currentIndex = 0;
+
+  const slides = $$('.vote-slide', track);
+  const dots = $$('.vote-dot', dotsContainer);
+  const prevBtn = $('#votePrevBtn');
+  const nextBtn = $('#voteNextBtn');
+
+  function updateCarousel(idx) {
+    currentIndex = Math.max(0, Math.min(idx, IDS.length - 1));
+    const isDesktop = window.innerWidth > 768;
+
+    slides.forEach(s => s.classList.remove('active-card', 'side-card', 'mobile-card'));
+
+    if (isDesktop) {
+      let windowStart = currentIndex - 1;
+      if (currentIndex === 0) windowStart = 0;
+      else if (currentIndex === IDS.length - 1) windowStart = IDS.length - 3;
+      windowStart = Math.max(0, Math.min(windowStart, IDS.length - 3));
+
+      track.style.transform = `translateX(-${windowStart * (100 / 3)}%)`;
+
+      if (currentIndex === 0) {
+        slides[windowStart].classList.add('active-card');
+        slides[windowStart + 1].classList.add('side-card');
+        slides[windowStart + 2].classList.add('side-card');
+      } else if (currentIndex === IDS.length - 1) {
+        slides[windowStart].classList.add('side-card');
+        slides[windowStart + 1].classList.add('side-card');
+        slides[windowStart + 2].classList.add('active-card');
+      } else {
+        slides[windowStart].classList.add('side-card');
+        slides[windowStart + 1].classList.add('active-card');
+        slides[windowStart + 2].classList.add('side-card');
+      }
+    } else {
+      track.style.transform = `translateX(-${currentIndex * 100}%)`;
+      slides.forEach(s => s.classList.add('mobile-card'));
+    }
+
+    dots.forEach((d, i) => d.classList.toggle('active', i === currentIndex));
+    prevBtn.disabled = currentIndex === 0;
+    nextBtn.disabled = currentIndex === IDS.length - 1;
+  }
+
+  prevBtn.onclick = () => { if (currentIndex > 0) updateCarousel(currentIndex - 1); };
+  nextBtn.onclick = () => { if (currentIndex < IDS.length - 1) updateCarousel(currentIndex + 1); };
+
+  let startX = 0, dist = 0;
+  track.ontouchstart = (e) => { startX = e.touches[0].clientX; dist = 0; };
+  track.ontouchmove = (e) => { dist = e.touches[0].clientX - startX; };
+  track.ontouchend = () => {
+    if (Math.abs(dist) > 40) {
+      if (dist < 0 && currentIndex < IDS.length - 1) updateCarousel(currentIndex + 1);
+      else if (dist > 0 && currentIndex > 0) updateCarousel(currentIndex - 1);
+    }
+  };
+
+  window.addEventListener('resize', () => updateCarousel(currentIndex));
+  updateCarousel(currentIndex);
 }
 
 async function renderScoreboard(api, targetMode) {
+  showView('view-scoreboard');
   targetMode = targetMode === 'test' ? 'test' : 'live';
+
+  const modePill = $('#sbModePill');
+  modePill.className = `pill ${targetMode}`;
+  modePill.textContent = targetMode.toUpperCase();
+
   const contestants = await api.getContestants();
   let scores = await api.getScores(targetMode);
+  const spotlightEl = $('#sbTop3Spotlight');
+  const sbGrid = $('#sbGrid');
+  const tpl = $('#tpl-sb-card');
 
-  $('#app').innerHTML = `
-    <div class="sb-wrap">
-      <div class="sb-stage">
-        <header class="sb-head">
-          <div class="left">
-            <div class="ev">ER DAY 2026</div>
-            <span class="pill ${targetMode}">${targetMode.toUpperCase()}</span>
-          </div>
-          <div class="mid">
-            <h1 class="t1 title-xl gold-text">POPULAR VOTE</h1>
-            <div class="t2">GREEN GLAM NIGHT</div>
-          </div>
-          <div class="sb-total lux">
-            <div class="lbl">TOTAL VOTES</div>
-            <div id="totNum" class="num gold-text">0</div>
-          </div>
-        </header>
+  function buildCard(item, total) {
+    const c = contestants[item.id] || {};
+    const pct = total > 0 ? ((item.votes / total) * 100).toFixed(1) : '0.0';
+    const node = tpl.content.cloneNode(true);
+    const card = node.querySelector('.sb-card');
 
-        <main id="sbGrid" class="sb-grid"></main>
+    card.dataset.id = item.id;
+    if (item.rank === 1) card.classList.add('r1');
+    else if (item.rank === 2) card.classList.add('r2');
+    else if (item.rank === 3) card.classList.add('r3');
 
-        <footer class="sb-foot">
-          LIVE STANDINGS <b>◇</b> GREEN GLAM NIGHT 2026
-        </footer>
-      </div>
-    </div>
-  `;
+    node.querySelector('.sb-rank').textContent = item.rank;
+    node.querySelector('.sb-photo').innerHTML = photoHTML(c, item.id);
+    node.querySelector('.sb-no').textContent = `NO. ${item.id}`;
+    node.querySelector('.sb-name').textContent = displayName(c);
+    node.querySelector('.sb-score').textContent = fmt(item.votes);
+    node.querySelector('.sb-bar i').style.width = `${pct}%`;
+    node.querySelector('.sb-pct').textContent = `${pct}%`;
+
+    return node;
+  }
 
   function update() {
     const ranked = rankList(scores);
     const total = sum(scores);
     animateNumber($('#totNum'), total);
 
-    $('#sbGrid').innerHTML = ranked.map(item => {
-      const c = contestants[item.id] || {};
-      const pct = total > 0 ? ((item.votes / total) * 100).toFixed(1) : '0.0';
-      const rCls = item.rank === 1 ? 'r1' : item.rank === 2 ? 'r2' : item.rank === 3 ? 'r3' : '';
-      return `
-        <div class="sb-card lux ${rCls}" data-id="${item.id}">
-          ${ORN}
-          <div class="sb-rank">${item.rank}</div>
-          <div class="sb-crown">👑</div>
-          <div class="sb-photo">${photoHTML(c, item.id)}</div>
-          <div class="sb-no">NO. ${item.id}</div>
-          <div class="sb-name">${esc(displayName(c))}</div>
-          <div class="sb-score gold-text">${fmt(item.votes)}</div>
-          <div class="sb-score-lbl">VOTES</div>
-          <div class="sb-bar"><i style="width:${pct}%"></i></div>
-          <div class="sb-pct">${pct}%</div>
-        </div>
-      `;
-    }).join('');
+    if (spotlightEl) {
+      spotlightEl.innerHTML = '';
+      const top3 = ranked.slice(0, 3);
+      top3.forEach(item => {
+        spotlightEl.appendChild(buildCard(item, total));
+      });
+    }
+
+    sbGrid.innerHTML = '';
+    ranked.forEach(item => {
+      sbGrid.appendChild(buildCard(item, total));
+    });
   }
 
   update();
@@ -462,119 +513,102 @@ async function renderScoreboard(api, targetMode) {
 }
 
 async function renderQR(api) {
+  showView('view-qr');
   await loadScript(LIBS.qrcode);
   const contestants = await api.getContestants();
   const origin = CONFIG.PUBLIC_BASE_URL || window.location.origin;
 
-  $('#app').innerHTML = `
-    <div class="page">
-      <div class="no-print center">
-        <h1 class="title-xl gold-text">QR CODE GENERATOR</h1>
-        <p class="eyebrow" style="margin-top:.4rem;">สำหรับพิมพ์การ์ดติดโต๊ะ / ป้ายประชาสัมพันธ์</p>
-        <div class="qr-tools" style="justify-content:center; margin-bottom:2rem;">
-          <button class="btn btn-gold" onclick="window.print()">🖨️ สั่งพิมพ์การ์ดทั้งหมด (A4)</button>
-        </div>
-      </div>
-      <div class="qr-grid">
-        ${IDS.map(id => {
-          const c = contestants[id] || {};
-          const voteUrl = `${origin}${link({ v: id })}`;
-          const qr = window.qrcode(0, 'M');
-          qr.addData(voteUrl);
-          qr.make();
-          return `
-            <div class="qr-card lux">
-              ${ORN}
-              <div class="ev">ER DAY 2026</div>
-              <div class="th gold-text">GREEN GLAM NIGHT</div>
-              <div class="scan">SCAN TO VOTE</div>
-              <div class="qr-box">${qr.createSvgTag({ scalable: true })}</div>
-              <div class="lbl">CONTESTANT</div>
-              <div class="no gold-text">${id}</div>
-              <div class="nm">${esc(displayName(c))}</div>
-              <div class="url">${voteUrl}</div>
-            </div>
-          `;
-        }).join('')}
-      </div>
-    </div>
-  `;
+  $('#btnPrintQR').onclick = () => window.print();
+
+  const qrGrid = $('#qrGrid');
+  const tpl = $('#tpl-qr-card');
+  qrGrid.innerHTML = '';
+
+  IDS.forEach(id => {
+    const c = contestants[id] || {};
+    const voteUrl = `${origin}${link({ v: id })}`;
+    const qr = window.qrcode(0, 'M');
+    qr.addData(voteUrl);
+    qr.make();
+
+    const node = tpl.content.cloneNode(true);
+    node.querySelector('.qr-box').innerHTML = qr.createSvgTag({ scalable: true });
+    node.querySelector('.no').textContent = id;
+    node.querySelector('.nm').textContent = displayName(c);
+    node.querySelector('.url').textContent = voteUrl;
+
+    qrGrid.appendChild(node);
+  });
 }
 
 async function renderAdmin(api) {
+  showView('view-admin');
+  $('#adminBackLink').href = link({});
+
   let state = await api.getState();
   let contestants = await api.getContestants();
   let scores = await api.getScores(state.active_mode);
 
+  const modeBanner = $('#adminModeBanner');
+  const bannerTitle = $('#adminModeBannerTitle');
+  const bannerDesc = $('#adminModeBannerDesc');
+  const toggleBtn = $('#toggleOpen');
+  const switchBtn = $('#switchMode');
+  const resetBtn = $('#btnResetMode');
+  const tbody = $('#adminTbody');
+  const tplRow = $('#tpl-admin-row');
+
   function draw() {
-    $('#app').innerHTML = `
-      <div class="page">
-        <div class="adm-top">
-          <div class="brand"><span class="t gold-text">ER DAY CONTROL PANEL</span></div>
-          <div class="who"><a href="${link({})}" class="btn btn-ghost btn-sm">กลับหน้าหลัก</a></div>
-        </div>
+    const isLive = state.active_mode === 'live';
+    const isOpen = state[state.active_mode + '_open'];
 
-        <div class="mode-banner lux ${state.active_mode}">
-          <div>
-            <div class="big">โหมดปัจจุบัน: ${state.active_mode.toUpperCase()}</div>
-            <div class="desc">สถานะการเปิดรับโหวต: ${state[state.active_mode + '_open'] ? '🟢 เปิดอยู่' : '🔴 ปิดอยู่'}</div>
-          </div>
-          <div style="display:flex; gap:.6rem;">
-            <button id="toggleOpen" class="btn ${state[state.active_mode + '_open'] ? 'btn-red' : 'btn-green'} btn-sm">
-              ${state[state.active_mode + '_open'] ? 'ปิดการโหวต' : 'เปิดการโหวต'}
-            </button>
-            <button id="switchMode" class="btn btn-ghost btn-sm">
-              สลับเป็นโหมด ${state.active_mode === 'test' ? 'LIVE' : 'TEST'}
-            </button>
-          </div>
-        </div>
+    modeBanner.className = `mode-banner lux ${state.active_mode}`;
+    bannerTitle.textContent = `โหมดปัจจุบัน: ${state.active_mode.toUpperCase()}`;
+    bannerDesc.textContent = `สถานะการเปิดรับโหวต : ${isOpen ? '🟢 เปิดอยู่' : '🔴 ปิดอยู่'}`;
 
-        <div class="panel lux">
-          ${ORN}
-          <h2>จัดการคะแนนและผู้ประกวด</h2>
-          <div class="scroll-x">
-            <table class="tbl">
-              <thead>
-                <tr>
-                  <th>NO.</th>
-                  <th>ชื่อผู้ประกวด</th>
-                  <th>คะแนน (${state.active_mode})</th>
-                  <th>จัดการคะแนนจำลอง</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${IDS.map(id => `
-                  <tr>
-                    <td class="num gold-text">${id}</td>
-                    <td>
-                      <input class="name-in" data-id="${id}" value="${esc(displayName(contestants[id]))}" placeholder="ใส่ชื่อผู้ประกวด" />
-                    </td>
-                    <td class="num">${scores[id] || 0}</td>
-                    <td>
-                      <button class="btn btn-ghost btn-sm add-score" data-id="${id}" data-v="1">+1</button>
-                      <button class="btn btn-ghost btn-sm add-score" data-id="${id}" data-v="5">+5</button>
-                      <button class="btn btn-ghost btn-sm add-score" data-id="${id}" data-v="-1">-1</button>
-                    </td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          </div>
-          <div class="ctrl-sec">
-            <button id="btnResetMode" class="btn btn-red btn-sm">รีเซ็ตคะแนนโหมด ${state.active_mode.toUpperCase()}</button>
-          </div>
-        </div>
-      </div>
-    `;
+    toggleBtn.className = `btn ${isOpen ? 'btn-red' : 'btn-green'} btn-sm`;
+    toggleBtn.textContent = isOpen ? 'ปิดการโหวต' : 'เปิดการโหวต';
 
-    $('#toggleOpen').onclick = async () => {
+    switchBtn.textContent = `สลับเป็นโหมด ${state.active_mode === 'test' ? 'LIVE' : 'TEST'}`;
+    $('#adminScoreHeader').textContent = `คะแนน (${state.active_mode})`;
+    resetBtn.textContent = `รีเซ็ตคะแนนโหมด ${state.active_mode.toUpperCase()}`;
+
+    tbody.innerHTML = '';
+    IDS.forEach(id => {
+      const node = tplRow.content.cloneNode(true);
+      node.querySelector('.col-id').textContent = id;
+
+      const inp = node.querySelector('.name-in');
+      inp.dataset.id = id;
+      inp.value = displayName(contestants[id]);
+      inp.onchange = async () => {
+        await api.updateContestant(inp.dataset.id, inp.value.trim(), contestants[inp.dataset.id]?.photo_url || '');
+        contestants = await api.getContestants();
+        toast('บันทึกชื่อเรียบร้อย');
+      };
+
+      node.querySelector('.col-score').textContent = scores[id] || 0;
+
+      node.querySelectorAll('.add-score').forEach(btn => {
+        btn.dataset.id = id;
+        btn.onclick = async () => {
+          await api.testAdd(btn.dataset.id, Number(btn.dataset.v));
+          scores = await api.getScores(state.active_mode);
+          draw();
+        };
+      });
+
+      tbody.appendChild(node);
+    });
+
+    toggleBtn.onclick = async () => {
       const prop = state.active_mode + '_open';
       await api.setState({ [prop]: !state[prop] });
       state = await api.getState();
       draw();
     };
 
-    $('#switchMode').onclick = async () => {
+    switchBtn.onclick = async () => {
       const next = state.active_mode === 'test' ? 'live' : 'test';
       await api.setState({ active_mode: next });
       state = await api.getState();
@@ -582,29 +616,13 @@ async function renderAdmin(api) {
       draw();
     };
 
-    $('#btnResetMode').onclick = async () => {
+    resetBtn.onclick = async () => {
       if (confirm(`ยืนยันการล้างคะแนนทั้งหมดของโหมด ${state.active_mode.toUpperCase()}?`)) {
         await api.reset(state.active_mode);
         scores = await api.getScores(state.active_mode);
         draw();
       }
     };
-
-    $$('.add-score').forEach(btn => {
-      btn.onclick = async () => {
-        await api.testAdd(btn.dataset.id, Number(btn.dataset.v));
-        scores = await api.getScores(state.active_mode);
-        draw();
-      };
-    });
-
-    $$('.name-in').forEach(inp => {
-      inp.onchange = async () => {
-        await api.updateContestant(inp.dataset.id, inp.value.trim(), contestants[inp.dataset.id]?.photo_url || '');
-        contestants = await api.getContestants();
-        toast('บันทึกชื่อเรียบร้อย');
-      };
-    });
   }
 
   draw();

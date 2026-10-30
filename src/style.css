@@ -35,6 +35,13 @@
   width: 56px;   
   height: 56px; 
 }
+.hub-card .ico3 img {
+  display: block;
+  object-fit: contain;
+  margin: 0 auto;
+  width: 20px;   
+  height: 20px; 
+}
 
 html, body {
   min-height: 100%;
@@ -492,6 +499,174 @@ body.demo #app {
   border-radius: 6px;
   color: var(--gold-soft);
   font-size: .88em;
+}
+
+/* =====================================================================
+   TOP 3 SPOTLIGHT (แท่นไฮไลท์สามอันดับแรกด้านบน)
+   ===================================================================== */
+/* =====================================================================
+   LIVE SCOREBOARD: ปลดล็อกจอให้เลื่อนขึ้น-ลงได้ ไม่บีบการ์ดหด
+   ===================================================================== */
+
+/* 1. ปลดล็อก Wrapper ให้ Scroll แนวตั้งได้ */
+html, body {
+  overflow-y: auto !important;
+  height: auto !important;
+  min-height: 100% !important;
+}
+
+/* 2. ปลดล็อก Wrapper ของ Scoreboard ไม่ให้ฟิกติดจอ และให้ขยายตามความยาวเนื้อหา */
+.sb-wrap {
+  position: relative !important;
+  inset: auto !important;
+  width: 100% !important;
+  min-height: 100dvh !important;
+  height: auto !important;
+  overflow-y: visible !important;
+  overflow-x: hidden !important;
+  padding: 2.5rem 1.2rem 5rem !important;
+}
+
+/* 3. ปลดล็อก Stage ให้ไหลตามยาว เลื่อนขึ้นลงได้ */
+.sb-stage {
+  position: relative !important;
+  width: min(100%, 1280px) !important;
+  aspect-ratio: auto !important;
+  height: auto !important;
+  min-height: auto !important;
+  margin: 0 auto !important;
+  overflow: visible !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+/* 3. จัดระยะแท่น Top 3 ด้านบนให้ลอยเด่น */
+.sb-top3-spotlight {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 1.8rem;
+  margin: 2rem 0 3rem;
+  padding: 1rem 0;
+  width: 100%;
+}
+
+.sb-top3-spotlight .sb-card {
+  flex: 0 0 280px;
+  min-height: 380px;
+}
+
+/* อันดับ 1 ตรงกลาง ขยายใหญ่เด่นสุด */
+.sb-top3-spotlight .sb-card.r1 {
+  order: 2;
+  flex: 0 0 320px;
+  min-height: 430px;
+  transform: scale(1.08);
+  z-index: 3;
+}
+
+.sb-top3-spotlight .sb-card.r1 .sb-photo {
+  width: 130px;
+  height: 130px;
+}
+
+.sb-top3-spotlight .sb-card.r1 .sb-score {
+  font-size: 3.6rem;
+}
+
+/* อันดับ 2 (ซ้าย) และ อันดับ 3 (ขวา) */
+.sb-top3-spotlight .sb-card.r2 {
+  order: 1;
+  z-index: 2;
+}
+
+.sb-top3-spotlight .sb-card.r3 {
+  order: 3;
+  z-index: 2;
+}
+
+.sb-top3-spotlight .sb-card.r2 .sb-photo,
+.sb-top3-spotlight .sb-card.r3 .sb-photo {
+  width: 110px;
+  height: 110px;
+}
+
+.sb-top3-spotlight .sb-card.r2 .sb-score,
+.sb-top3-spotlight .sb-card.r3 .sb-score {
+  font-size: 3rem;
+}
+
+/* 4. การ์ด Grid ทั้ง 10 ใบด้านล่าง คืนค่าขนาดเท่าเดิม ไม่บีบให้หด */
+.sb-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 1.2rem;
+  width: 100%;
+  margin-top: 1rem;
+}
+
+.sb-grid .sb-card {
+  min-height: 320px; /* ขนาดความสูงการ์ดมาตรฐานเท่าเดิม */
+  padding: 1.4rem 1rem 1.2rem;
+}
+
+.sb-grid .sb-photo {
+  width: 90px;
+  height: 90px;
+}
+
+.sb-grid .sb-photo img,
+.sb-grid .sb-photo .mono {
+  font-size: 2.2rem;
+}
+
+.sb-grid .sb-score {
+  font-size: 2.5rem;
+}
+
+.sb-grid .sb-no {
+  font-size: 0.95rem;
+}
+
+.sb-grid .sb-name {
+  font-size: 0.95rem;
+  min-height: 1.4rem;
+}
+
+.sb-grid .sb-rank {
+  width: 44px;
+  height: 44px;
+  font-size: 1.3rem;
+}
+
+/* 5. ปรับการแสดงผลบนหน้าจอมือถือและแท็บเล็ต */
+@media (max-width: 992px) {
+  .sb-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 680px) {
+  .sb-top3-spotlight {
+    flex-direction: column;
+    align-items: center;
+    gap: 1.4rem;
+  }
+  .sb-top3-spotlight .sb-card.r1,
+  .sb-top3-spotlight .sb-card.r2,
+  .sb-top3-spotlight .sb-card.r3 {
+    width: 92%;
+    flex: none;
+    transform: none;
+  }
+  .sb-top3-spotlight .sb-card.r1 { order: 1; }
+  .sb-top3-spotlight .sb-card.r2 { order: 2; }
+  .sb-top3-spotlight .sb-card.r3 { order: 3; }
+
+  .sb-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.8rem;
+  }
 }
 
 /* =====================================================================
@@ -1620,6 +1795,23 @@ select.inp option {
   width: 100%;
   height: auto;
 }
+/* ปรับแต่งความกว้างและฟอนต์ของช่องกรอกชื่อใน Admin Panel */
+.tbl .name-in {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(232, 213, 163, 0.35);
+  border-radius: 8px;
+  padding: 0.45rem 0.8rem;
+  color: var(--ivory);
+  font-family: inherit;
+  font-size: 0.95rem;
+}
+
+.tbl .name-in:focus {
+  border-color: var(--gold);
+  outline: none;
+  background: rgba(0, 0, 0, 0.45);
+}
 
 .qr-card .lbl {
   font-family: var(--caps);
@@ -1656,6 +1848,128 @@ select.inp option {
   justify-content: center;
   margin-top: .9rem;
   flex-wrap: wrap;
+}
+
+/* ขยายคอนเทนเนอร์หน้า Vote ให้กว้างเต็มจอ */
+.vote.vote-view-container {
+  max-width: 1400px; /* หรือตั้งเป็น 100% / 96vw เพื่อให้กว้างสุดจอ */
+  width: 96vw;
+  margin: 0 auto;
+  padding: 1.6rem 0.5rem 2.4rem;
+}
+
+/* กล่องครอบ Carousel */
+.vote-carousel-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.vote-carousel-viewport {
+  width: 100%;
+  overflow: hidden;
+  padding: 10px 0; /* เว้นที่ให้เงากล่อง lux ไม่โดนตัด */
+}
+
+.vote-carousel-track {
+  display: flex;
+  transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+  will-change: transform;
+  width: 100%;
+}
+
+/* แสดงผลทีละ 3 การ์ด (ความกว้าง 1/3 ต่อสไลด์) */
+.vote-slide {
+  flex: 0 0 calc(100% / 3);
+  min-width: calc(100% / 3);
+  box-sizing: border-box;
+  padding: 0 10px; /* ระยะห่างระหว่างการ์ด */
+}
+
+/* ปรับปุ่มลูกศรให้อยู่ขอบซ้าย-ขวานอกการ์ด */
+.carousel-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: rgba(6, 78, 59, 0.9);
+  border: 1.5px solid var(--gold);
+  color: var(--gold-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.6);
+  transition: background 0.2s, transform 0.15s, opacity 0.2s;
+}
+
+.carousel-arrow.prev {
+  left: 10px;
+}
+
+.carousel-arrow.next {
+  right: 10px;
+}
+
+/* =====================================================================
+   PAGINATION DOTS (จุดระบุตำแหน่งการ์ดด้านล่าง)
+   ===================================================================== */
+.vote-dots {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 1.5rem auto 0.5rem;
+  padding: 0.4rem 1rem;
+  background: rgba(2, 44, 34, 0.45);
+  border: 1px solid rgba(232, 213, 163, 0.18);
+  border-radius: 999px;
+  width: max-content;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.vote-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgba(232, 213, 163, 0.25);
+  border: 1px solid rgba(212, 175, 55, 0.35);
+  padding: 0;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+  outline: none;
+}
+
+.vote-dot:hover {
+  background: rgba(232, 213, 163, 0.6);
+  transform: scale(1.15);
+}
+
+/* สถานะจุดการ์ดที่กำลังแสดงอยู่ (Active) */
+.vote-dot.active {
+  width: 28px;
+  border-radius: 999px;
+  background: var(--gold-grad);
+  border-color: #FFFDF5;
+  box-shadow: 0 0 12px rgba(212, 175, 55, 0.8), inset 0 1px 2px rgba(255, 255, 255, 0.6);
+  transform: scale(1.05);
+}
+
+
+/* สำหรับจอมือถือ (ปรับเหลือ 1 การ์ดเพื่อไม่ให้บีบจนเล็กเกินไป) */
+@media (max-width: 768px) {
+  .vote-slide {
+    flex: 0 0 100%;
+    min-width: 100%;
+    padding: 0 6px;
+  }
 }
 
 @media print {

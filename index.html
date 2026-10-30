@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#064E3B">
-  <title>ER DAY 2026 · GREEN GLAM NIGHT</title>
+  <title>ER DAY 2026</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Playfair+Display:ital,wght@0,500;0,700;0,900;1,500&family=Prompt:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -12,7 +12,252 @@
 </head>
 <body>
   <canvas id="fx" aria-hidden="true"></canvas>
-  <div id="app"></div>
+
+  <div id="app">
+    <!--  VIEW 1: HUB  -->
+    <section id="view-hub" class="page center fade-in hidden">
+      <p class="hero-sub">Annual Celebration</p>
+      <h1 class="hero-title gold-text">ER DAY 2026</h1>
+      <p class="eyebrow" style="margin-top:.6rem;"><!--GREEN GLAM NIGHT · -->Popular Vote System</p>
+      <div class="divider"><span>⚜️</span></div>
+      
+      <div class="hub-grid">
+        <a id="hubLinkScoreboard" class="hub-card lux" href="#">
+          <!-- <div class="ico">🏆</div> -->
+          <div class="ico">
+            <img src="https://img.icons8.com/color/48/trophy.png" alt="Live Scoreboard" width="36" height="36">
+          </div>
+          <h3>Live Scoreboard</h3>
+          <p>การถ่ายทอดสดผลคะแนน</p>
+        </a>
+        <a id="hubLinkVote" class="hub-card lux" href="#">
+          <!-- <div class="ico">✨</div> -->
+          <div class="ico">
+            <img src="https://img.icons8.com/color/48/sparkling.png" alt="Sparkles" width="36" height="36">
+          </div>
+          <h3>Vote Page</h3>
+          <p>อย่าลืมมาลงคะแนนโหวตกันนะ</p>
+        </a>
+        <a id="hubLinkQR" class="hub-card lux" href="#">
+          <!-- <div class="ico">📱</div> -->
+          <div class="ico2">
+            <img src="https://img.icons8.com/bubbles/50/qr-code.png" alt="QR Code Bubbles" width="40" height="40">
+          </div>
+          <h3>QR Code Cards</h3>
+          <p>QR Code สำหรับติดประจำโต๊ะหรือป้ายผู้ประกวด</p>
+        </a>
+        <a id="hubLinkAdmin" class="hub-card lux" href="#">
+          <!-- <div class="ico">⚙️</div> -->
+          <div class="ico">
+            <img src="https://img.icons8.com/dusk/64/settings.png" alt="Settings Dusk" width="36" height="36">
+          </div>
+          <h3>Admin Control</h3>
+          <p>ระบบจัดการสถานะการโหวต รีเซ็ตคะแนน และข้อมูลผู้ประกวด</p>
+        </a>
+      </div>
+    </section>
+
+    <!-- VIEW 2: VOTE -->
+    <section id="view-vote" class="vote vote-view-container hidden">
+      <div class="brand-sm">ER DAY 2026 · GREEN GLAM NIGHT</div>
+      <h1 class="title-xl brand-lg gold-text">POPULAR VOTE</h1>
+      <div class="status-row">
+        <span id="voteModePill" class="pill"></span>
+        <span id="voteOpenPill" class="pill">
+          <i class="dot"></i><span id="voteOpenText"></span>
+        </span>
+      </div>
+      <p class="prompt">กดปุ่มด้านล่างเพื่อโหวตให้ผู้ประกวด</p>
+
+      <!-- Carousel Container -->
+      <div class="vote-carousel-wrapper">
+        <button id="votePrevBtn" class="carousel-arrow prev" aria-label="Previous">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </button>
+
+        <div class="vote-carousel-viewport">
+          <div id="voteTrack" class="vote-carousel-track"></div>
+        </div>
+
+        <button id="voteNextBtn" class="carousel-arrow next" aria-label="Next">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Pagination Dots -->
+      <div id="voteDots" class="vote-dots"></div>
+
+      <!-- <p class="vote-note">ระบบจะบันทึกคะแนนเข้าสู่ระบบแบบ Realtime ทันที</p> -->
+      <div class="vote-foot">EMERGENCY DEPARTMENT · 2026</div>
+
+      <!-- Thanks Modal Backdrop -->
+      <div id="voteThanksModal" class="thanks hidden">
+        <div class="inner">
+          <div class="check">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#064E3B" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20 6L9 17l-5-5"></path>
+            </svg>
+          </div>
+          <h2 class="gold-text">ขอบคุณสำหรับการโหวต!</h2>
+          <p>คะแนนของคุณสำหรับหมายเลข <b id="thanksContestantId"></b> ถูกบันทึกแล้ว</p>
+          <button id="btnCloseThanks" class="btn btn-gold" style="margin-top:1.5rem;">ปิด</button>
+        </div>
+      </div>
+    </section>
+
+<!-- VIEW 3: SCOREBOARD -->
+    <section id="view-scoreboard" class="sb-wrap hidden">
+      <div class="sb-stage">
+        <header class="sb-head">
+          <div class="left">
+            <div class="ev">ER DAY 2026</div>
+            <span id="sbModePill" class="pill"></span>
+          </div>
+          <div class="mid">
+            <h1 class="t1 title-xl gold-text">POPULAR VOTE</h1>
+            <div class="t2">GREEN GLAM NIGHT</div>
+          </div>
+          <div class="sb-total lux">
+            <div class="lbl">TOTAL VOTES</div>
+            <div id="totNum" class="num gold-text">0</div>
+          </div>
+        </header>
+
+        <!-- แท่นโชว์ Top 3 ลอยเด่นด้านบน -->
+        <div id="sbTop3Spotlight" class="sb-top3-spotlight"></div>
+
+        <!-- การ์ดทั้ง 10 ใบ เรียงเหมือนเดิม ขนาดเท่าเดิม -->
+        <main id="sbGrid" class="sb-grid"></main>
+
+        <footer class="sb-foot">
+          LIVE STANDINGS <b>◇</b> GREEN GLAM NIGHT 2026
+        </footer>
+      </div>
+    </section>
+
+<!--VIEW 4: QR GENERATOR-->
+    <section id="view-qr" class="page hidden">
+      <div class="no-print center">
+        <h1 class="title-xl gold-text">QR CODE GENERATOR</h1>
+        <p class="eyebrow" style="margin-top:.4rem;">สำหรับพิมพ์การ์ดติดโต๊ะ / ป้ายประชาสัมพันธ์</p>
+        <div class="qr-tools" style="justify-content:center; margin-bottom:2rem;">
+          <button id="btnPrintQR" class="btn btn-gold">
+            <div class="ico3">
+            <img src="https://img.icons8.com/?size=100&id=10338&format=png&color=000000" alt="Settings Dusk" width="36" height="36">
+            </div>
+           สั่งพิมพ์การ์ดทั้งหมด (A4)</button>
+          
+        </div>
+      </div>
+      <div id="qrGrid" class="qr-grid"></div>
+    </section>
+
+
+    <!-- VIEW 5: ADMIN PANEL-->
+    <section id="view-admin" class="page hidden">
+      <div class="adm-top">
+        <div class="brand"><span class="t gold-text">ER DAY CONTROL PANEL</span></div>
+        <div class="who"><a id="adminBackLink" href="#" class="btn btn-ghost btn-sm">กลับหน้าหลัก</a></div>
+      </div>
+
+      <div id="adminModeBanner" class="mode-banner lux">
+        <div>
+          <div id="adminModeBannerTitle" class="big"></div>
+          <div id="adminModeBannerDesc" class="desc"></div>
+        </div>
+        <div style="display:flex; gap:.6rem;">
+          <button id="toggleOpen" class="btn btn-sm"></button>
+          <button id="switchMode" class="btn btn-ghost btn-sm"></button>
+        </div>
+      </div>
+
+      <div class="panel lux">
+        <i class="orn tl"></i><i class="orn tr"></i><i class="orn bl"></i><i class="orn br"></i>
+        <h2>จัดการคะแนนและผู้ประกวด</h2>
+        <div class="scroll-x">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>NO.</th>
+                <th>ชื่อผู้ประกวด</th>
+                <th id="adminScoreHeader">คะแนน</th>
+                <th>จัดการคะแนนจำลอง</th>
+              </tr>
+            </thead>
+            <tbody id="adminTbody"></tbody>
+          </table>
+        </div>
+        <div class="ctrl-sec">
+          <button id="btnResetMode" class="btn btn-red btn-sm"></button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Reusable Templates -->
+  <template id="tpl-vote-card">
+    <div class="vote-slide">
+      <div class="vote-card lux">
+        <i class="orn tl"></i><i class="orn tr"></i><i class="orn bl"></i><i class="orn br"></i>
+        <div class="photo"></div>
+        <div class="c-label">CONTESTANT</div>
+        <div class="c-num gold-text"></div>
+        <div class="c-name"></div>
+        <button class="btn btn-gold vote-btn btn-cast-vote">
+          VOTE NOW
+        </button>
+      </div>
+    </div>
+  </template>
+
+  <template id="tpl-sb-card">
+    <div class="sb-card lux">
+      <i class="orn tl"></i><i class="orn tr"></i><i class="orn bl"></i><i class="orn br"></i>
+      <div class="sb-rank"></div>
+      <!-- <div class="sb-crown">👑</div> -->
+      <div class="sb-photo"></div>
+      <div class="sb-no"></div>
+      <div class="sb-name"></div>
+      <div class="sb-score gold-text"></div>
+      <div class="sb-score-lbl">VOTES</div>
+      <div class="sb-bar"><i></i></div>
+      <div class="sb-pct"></div>
+    </div>
+  </template>
+
+<template id="tpl-qr-card">
+    <div class="qr-card lux">
+      <i class="orn tl"></i><i class="orn tr"></i><i class="orn bl"></i><i class="orn br"></i>
+      <div class="ev">ER DAY 2026</div>
+      <div class="th gold-text">GREEN GLAM NIGHT</div>
+      <div class="scan">SCAN TO VOTE</div>
+      <div class="qr-box"></div>
+      <div class="lbl">CONTESTANT</div>
+      <div class="no gold-text"></div>
+      <div class="nm"></div>
+      <div class="url"></div>
+    </div>
+  </template>
+
+  <template id="tpl-admin-row">
+    <tr>
+      <td class="num gold-text col-id"></td>
+      <td>
+        <input class="name-in" placeholder="ใส่ชื่อผู้ประกวด" />
+      </td>
+      <td class="num col-score">0</td>
+      <td>
+        <button class="btn btn-ghost btn-sm add-score" data-v="1">+1</button>
+        <button class="btn btn-ghost btn-sm add-score" data-v="5">+5</button>
+        <button class="btn btn-ghost btn-sm add-score" data-v="-1">-1</button>
+      </td>
+    </tr>
+  </template>
+
   <div id="toast" aria-live="polite"></div>
 
   <script type="module" src="/src/main.js"></script>
