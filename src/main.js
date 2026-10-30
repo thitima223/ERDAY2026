@@ -3,7 +3,8 @@ import './style.css';
 /* CONFIGURATION */
 const CONFIG = {
   SUPABASE_URL: 'https://YOUR-PROJECT-REF.supabase.co',
-  // SUPABASE_ANON_KEY: 'YOUR_SUPABASE_ANON_KEY',
+  SUPABASE_ANON_KEY: 'YOUR_SUPABASE_ANON_KEY',
+  // วางลิงก์ Web App ของ Google Apps Script ที่นี่ (ลงท้ายด้วย /exec)
   SHEETS_URL: 'https://script.google.com/macros/s/AKfycbwVlW_4rlHfPpWSK1nP9_Gt-UPIXf_DfEvDTNExGlf9Rf9T9bikmVTiYQeCf6dNpH8EPw/exec',
   PUBLIC_BASE_URL: 'https://erday2026.vercel.app'
 };
@@ -358,6 +359,17 @@ async function initApp() {
     api = new DemoAPI();
   } else if (CONFIG.SHEETS_URL) {
     api = new SheetsAPI();
+    // เช็กการเชื่อมต่อชีทก่อน ถ้าไม่ได้ให้แสดงสาเหตุบนหน้าจอ (แทนที่จะเป็นหน้าว่าง)
+    try {
+      await api._get({ action: 'all' });
+    } catch (err) {
+      const box = document.createElement('div');
+      box.style.cssText = 'position:fixed;left:12px;right:12px;bottom:12px;z-index:99999;background:#b00020;color:#fff;padding:12px 14px;border-radius:10px;font:14px/1.4 sans-serif;white-space:pre-wrap';
+      box.textContent = 'เชื่อมต่อ Google Sheet ไม่ได้: ' + (err && err.message ? err.message : err) +
+        '\n(เช็กว่า Apps Script Deploy เป็น Execute as: Me / Who has access: Anyone และใช้ลิงก์ /exec)';
+      document.body.appendChild(box);
+      console.error('SheetsAPI error:', err);
+    }
   } else {
     try {
       await loadScript(LIBS.supabase);
