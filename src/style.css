@@ -1719,6 +1719,29 @@ select.inp option {
   content: "◇ ";
   color: var(--gold);
 }
+/* =====================================================================
+   ADMIN LOGIN OVERRIDES
+   ===================================================================== */
+/* Username, Password */
+#adminUser, #adminPass {
+  font-size: 1.25rem; 
+  padding: 0.85rem 1rem; 
+  background: rgba(0, 0, 0, 0.3);
+  border: 1.5px solid rgba(232, 213, 163, 0.35);
+  border-radius: 12px;
+  color: var(--ivory);
+  transition: all 0.2s ease;
+}
+
+/* effect text */
+#adminUser:focus, #adminPass:focus {
+  border-color: var(--gold);
+  background: rgba(0, 0, 0, 0.5);
+  outline: none;
+  box-shadow: 0 0 15px rgba(212, 175, 55, 0.2);
+}
+
+
 
 /* =====================================================================
    QR GENERATOR
