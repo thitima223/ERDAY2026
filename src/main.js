@@ -171,7 +171,7 @@ class SupabaseAPI {
 class SheetsAPI {
   constructor() {
     this.url = CONFIG.SHEETS_URL;
-    this.POLL_MS = 2500;
+    this.POLL_MS = 2000; // ลดเวลาดึงข้อมูลเหลือทุก 2 วินาที (เพื่อไม่ให้ Google บล็อกเมื่อคนเข้าเยอะ)
     this.h = new Set();
     this.timer = null;
     this.last = { scores: {}, state: '', contestants: '' };
@@ -179,16 +179,16 @@ class SheetsAPI {
   async _get(p) {
     const u = new URL(this.url);
     Object.entries(p).forEach(([k, v]) => u.searchParams.set(k, v));
-    if (p.action !== 'all') this._cache = null;        // มีการเขียนข้อมูล → ล้างแคช
+    if (p.action !== 'all') this._cache = null;
     const r = await fetch(u.toString(), { cache: 'no-store' });
     const d = await r.json();
     if (d && d.error) throw new Error(d.error);
     if (p.action === 'all') this._cache = { t: Date.now(), d };
     return d;
   }
-  // ดึงข้อมูลทั้งหมดครั้งเดียว: ใช้ผลล่าสุดซ้ำภายใน 1.5 วิ และรวมคำขอที่ซ้อนกัน (Apps Script ช้า ~1-3 วิ/ครั้ง)
   _all() {
-    if (this._cache && Date.now() - this._cache.t < 1500) return Promise.resolve(this._cache.d);
+    // ลดเวลาแคชจาก 1500ms เหลือ 800ms เพื่อให้คะแนนใหม่แสดงไวขึ้น
+    if (this._cache && Date.now() - this._cache.t < 800) return Promise.resolve(this._cache.d);
     if (!this._inflight) {
       this._inflight = this._get({ action: 'all' }).finally(() => { this._inflight = null; });
     }
@@ -197,7 +197,29 @@ class SheetsAPI {
   async getState() { return (await this._all()).state; }
   async getContestants() { return (await this._all()).contestants; }
   async getScores(m) { return (await this._all()).scores[m]; }
-  castVote(id) { return this._get({ action: 'vote', id }); }
+  
+  async castVote(id, device, req) {
+    const res = await this._get({ action: 'vote', id });
+    
+    // Optimistic Update: บวกคะแนนบนหน้าจอทันทีเมื่อโหวตสำเร็จ ไม่ต้องรอรอบดึงข้อมูล
+    if (res && res.ok) {
+      try {
+        const stateObj = JSON.parse(this.last.state || '{"active_mode":"live"}');
+        const m = stateObj.active_mode || 'live';
+        const key = m + id;
+        if (this.last.scores[key] !== undefined) {
+          this.last.scores[key] += 1;
+          for (const h of this.h) {
+            h.onScore && h.onScore({ mode: m, contestant_id: id, votes: this.last.scores[key] });
+          }
+        }
+      } catch(e){}
+      // สั่งดึงข้อมูลล่าสุดจาก Sheet ทันทีเบื้องหลัง
+      this._poll();
+    }
+    return res;
+  }
+
   async deviceStatus() { return { can_vote: true }; }
   subscribe(h) {
     this.h.add(h);
