@@ -281,8 +281,8 @@ async function initApp() {
   if (isDemo) {
     document.body.classList.add('demo');
     const ribbon = document.createElement('div');
-    ribbon.className = 'demo-ribbon';
-    ribbon.textContent = 'MODE: DEMO PREVIEW (ไม่ได้เชื่อมต่อ Supabase จริง)';
+    // ribbon.className = 'demo-ribbon';
+    // ribbon.textContent = 'MODE: DEMO PREVIEW (ไม่ได้เชื่อมต่อ Supabase จริง)';
     document.body.prepend(ribbon);
     api = new DemoAPI();
   } else {
