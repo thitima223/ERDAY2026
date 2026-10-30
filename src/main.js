@@ -167,11 +167,11 @@ class SupabaseAPI {
   resetLog() { return this._q(this.c.from('reset_log').select('*').order('created_at', { ascending: false }).limit(20)); }
 }
 
-/* Google Sheets (Apps Script) — ทุกเครื่องอ่าน/เขียนชีทเดียวกัน, ดึงข้อมูลซ้ำทุก POLL_MS */
+/* Google Sheets (Apps Script) */
 class SheetsAPI {
   constructor() {
     this.url = CONFIG.SHEETS_URL;
-    this.POLL_MS = 2000; // ลดเวลาดึงข้อมูลเหลือทุก 2 วินาที (เพื่อไม่ให้ Google บล็อกเมื่อคนเข้าเยอะ)
+    this.POLL_MS = 2000;
     this.h = new Set();
     this.timer = null;
     this.last = { scores: {}, state: '', contestants: '' };
@@ -179,6 +179,8 @@ class SheetsAPI {
   async _get(p) {
     const u = new URL(this.url);
     Object.entries(p).forEach(([k, v]) => u.searchParams.set(k, v));
+    u.searchParams.set('_t', Date.now()); // 👈 ทะลวง Cache! บังคับดึงข้อมูลใหม่จาก Sheet เสมอ
+    
     if (p.action !== 'all') this._cache = null;
     const r = await fetch(u.toString(), { cache: 'no-store' });
     const d = await r.json();
@@ -187,7 +189,6 @@ class SheetsAPI {
     return d;
   }
   _all() {
-    // ลดเวลาแคชจาก 1500ms เหลือ 800ms เพื่อให้คะแนนใหม่แสดงไวขึ้น
     if (this._cache && Date.now() - this._cache.t < 800) return Promise.resolve(this._cache.d);
     if (!this._inflight) {
       this._inflight = this._get({ action: 'all' }).finally(() => { this._inflight = null; });
@@ -200,8 +201,6 @@ class SheetsAPI {
   
   async castVote(id, device, req) {
     const res = await this._get({ action: 'vote', id });
-    
-    // Optimistic Update: บวกคะแนนบนหน้าจอทันทีเมื่อโหวตสำเร็จ ไม่ต้องรอรอบดึงข้อมูล
     if (res && res.ok) {
       try {
         const stateObj = JSON.parse(this.last.state || '{"active_mode":"live"}');
@@ -214,13 +213,13 @@ class SheetsAPI {
           }
         }
       } catch(e){}
-      // สั่งดึงข้อมูลล่าสุดจาก Sheet ทันทีเบื้องหลัง
       this._poll();
     }
     return res;
   }
 
   async deviceStatus() { return { can_vote: true }; }
+  
   subscribe(h) {
     this.h.add(h);
     if (!this.timer) this.timer = setInterval(() => this._poll(), this.POLL_MS);
@@ -230,26 +229,44 @@ class SheetsAPI {
       if (!this.h.size && this.timer) { clearInterval(this.timer); this.timer = null; }
     };
   }
+  
   async _poll() {
     let d;
     try { d = await this._get({ action: 'all' }); } catch { return; }
-    const st = JSON.stringify(d.state), ct = JSON.stringify(d.contestants);
-    const stChanged = st !== this.last.state, ctChanged = ct !== this.last.contestants;
-    this.last.state = st; this.last.contestants = ct;
-    for (const h of this.h) {
-      if (stChanged) h.onState && h.onState({ ...d.state });
-      if (ctChanged) for (const id of IDS) h.onContestant && h.onContestant({ ...d.contestants[id] });
-      for (const m of ['test', 'live']) {
-        for (const id of IDS) {
-          const key = m + id, v = d.scores[m][id];
-          if (this.last.scores[key] !== v) {
-            this.last.scores[key] = v;
-            h.onScore && h.onScore({ mode: m, contestant_id: id, votes: v });
-          }
+    
+    const st = JSON.stringify(d.state);
+    const ct = JSON.stringify(d.contestants);
+    const stChanged = st !== this.last.state;
+    const ctChanged = ct !== this.last.contestants;
+    
+    // แยกเก็บค่าคะแนนที่เปลี่ยนไปทั้งหมด เพื่อแก้บั๊กการอัปเดตตกหล่น
+    const newScores = {};
+    const scoreChanges = [];
+    
+    for (const m of ['test', 'live']) {
+      for (const id of IDS) {
+        const key = m + id;
+        const v = d.scores[m][id];
+        newScores[key] = v;
+        if (this.last.scores[key] !== v) {
+          scoreChanges.push({ mode: m, contestant_id: id, votes: v });
         }
       }
     }
+
+    this.last.state = st;
+    this.last.contestants = ct;
+    this.last.scores = newScores;
+
+    for (const h of this.h) {
+      if (stChanged) h.onState && h.onState({ ...d.state });
+      if (ctChanged) for (const id of IDS) h.onContestant && h.onContestant({ ...d.contestants[id] });
+      for (const change of scoreChanges) {
+        h.onScore && h.onScore(change);
+      }
+    }
   }
+  
   async getSession() { return { user: { email: 'admin@sheets' } }; }
   async signIn() { return true; }
   async signOut() { return true; }
