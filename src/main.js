@@ -3,8 +3,7 @@ import './style.css';
 /* CONFIGURATION */
 const CONFIG = {
   SUPABASE_URL: 'https://YOUR-PROJECT-REF.supabase.co',
-  SUPABASE_ANON_KEY: 'YOUR_SUPABASE_ANON_KEY',
-  // วางลิงก์ Web App ของ Google Apps Script ที่นี่ (ลงท้ายด้วย /exec)
+  // SUPABASE_ANON_KEY: 'YOUR_SUPABASE_ANON_KEY',
   SHEETS_URL: 'https://script.google.com/macros/s/AKfycbwVlW_4rlHfPpWSK1nP9_Gt-UPIXf_DfEvDTNExGlf9Rf9T9bikmVTiYQeCf6dNpH8EPw/exec',
   PUBLIC_BASE_URL: 'https://erday2026.vercel.app'
 };
@@ -180,14 +179,24 @@ class SheetsAPI {
   async _get(p) {
     const u = new URL(this.url);
     Object.entries(p).forEach(([k, v]) => u.searchParams.set(k, v));
-    const r = await fetch(u.toString());
+    if (p.action !== 'all') this._cache = null;        // มีการเขียนข้อมูล → ล้างแคช
+    const r = await fetch(u.toString(), { cache: 'no-store' });
     const d = await r.json();
     if (d && d.error) throw new Error(d.error);
+    if (p.action === 'all') this._cache = { t: Date.now(), d };
     return d;
   }
-  async getState() { return (await this._get({ action: 'all' })).state; }
-  async getContestants() { return (await this._get({ action: 'all' })).contestants; }
-  async getScores(m) { return (await this._get({ action: 'all' })).scores[m]; }
+  // ดึงข้อมูลทั้งหมดครั้งเดียว: ใช้ผลล่าสุดซ้ำภายใน 1.5 วิ และรวมคำขอที่ซ้อนกัน (Apps Script ช้า ~1-3 วิ/ครั้ง)
+  _all() {
+    if (this._cache && Date.now() - this._cache.t < 1500) return Promise.resolve(this._cache.d);
+    if (!this._inflight) {
+      this._inflight = this._get({ action: 'all' }).finally(() => { this._inflight = null; });
+    }
+    return this._inflight;
+  }
+  async getState() { return (await this._all()).state; }
+  async getContestants() { return (await this._all()).contestants; }
+  async getScores(m) { return (await this._all()).scores[m]; }
   castVote(id) { return this._get({ action: 'vote', id }); }
   async deviceStatus() { return { can_vote: true }; }
   subscribe(h) {
@@ -359,17 +368,8 @@ async function initApp() {
     api = new DemoAPI();
   } else if (CONFIG.SHEETS_URL) {
     api = new SheetsAPI();
-    // เช็กการเชื่อมต่อชีทก่อน ถ้าไม่ได้ให้แสดงสาเหตุบนหน้าจอ (แทนที่จะเป็นหน้าว่าง)
-    try {
-      await api._get({ action: 'all' });
-    } catch (err) {
-      const box = document.createElement('div');
-      box.style.cssText = 'position:fixed;left:12px;right:12px;bottom:12px;z-index:99999;background:#b00020;color:#fff;padding:12px 14px;border-radius:10px;font:14px/1.4 sans-serif;white-space:pre-wrap';
-      box.textContent = 'เชื่อมต่อ Google Sheet ไม่ได้: ' + (err && err.message ? err.message : err) +
-        '\n(เช็กว่า Apps Script Deploy เป็น Execute as: Me / Who has access: Anyone และใช้ลิงก์ /exec)';
-      document.body.appendChild(box);
-      console.error('SheetsAPI error:', err);
-    }
+    // เช็กการเชื่อมต่อชีทแบบไม่บล็อกหน้าจอ ถ้าไม่ได้ให้แสดงสาเหตุบนหน้าจอ
+    api._all().catch(showSheetError);
   } else {
     try {
       await loadScript(LIBS.supabase);
@@ -384,11 +384,22 @@ async function initApp() {
   const qr = params.get('qr');
   const admin = params.get('admin');
 
-  if (admin !== null) renderAdmin(api);
-  else if (qr !== null) renderQR(api);
-  else if (screen) renderScoreboard(api, screen);
-  else if (v) renderVote(api, v);
+  if (admin !== null) renderAdmin(api).catch(showSheetError);
+  else if (qr !== null) renderQR(api).catch(showSheetError);
+  else if (screen) renderScoreboard(api, screen).catch(showSheetError);
+  else if (v) renderVote(api, v).catch(showSheetError);
   else renderHub();
+}
+
+function showSheetError(err) {
+  console.error('SheetsAPI error:', err);
+  if ($('#sheetErr')) return;
+  const box = document.createElement('div');
+  box.id = 'sheetErr';
+  box.style.cssText = 'position:fixed;left:12px;right:12px;bottom:12px;z-index:99999;background:#b00020;color:#fff;padding:12px 14px;border-radius:10px;font:14px/1.4 sans-serif;white-space:pre-wrap';
+  box.textContent = 'เชื่อมต่อ Google Sheet ไม่ได้: ' + (err && err.message ? err.message : err) +
+    '\n(เช็กว่า Apps Script Deploy เป็น Execute as: Me / Who has access: Anyone และใช้ลิงก์ /exec)';
+  document.body.appendChild(box);
 }
 
 function renderHub() {
@@ -401,6 +412,7 @@ function renderHub() {
 
 async function renderVote(api, contestantId) {
   showView('view-vote');
+  $('#voteTrack').innerHTML = '<p style="width:100%;text-align:center;padding:3rem 0;opacity:.8">กำลังโหลดข้อมูล...</p>';
   contestantId = String(contestantId).padStart(2, '0');
   const contestants = await api.getContestants();
   const state = await api.getState();
@@ -533,6 +545,7 @@ async function renderVote(api, contestantId) {
 async function renderScoreboard(api, targetMode) {
   showView('view-scoreboard');
   targetMode = targetMode === 'test' ? 'test' : 'live';
+  $('#sbGrid').innerHTML = '<p style="grid-column:1/-1;text-align:center;padding:3rem 0;opacity:.8">กำลังโหลดข้อมูล...</p>';
 
   const modePill = $('#sbModePill');
   modePill.className = `pill ${targetMode}`;
