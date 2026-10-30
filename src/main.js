@@ -3,8 +3,9 @@ import './style.css';
 /* CONFIGURATION */
 const CONFIG = {
   SUPABASE_URL: 'https://YOUR-PROJECT-REF.supabase.co',
-  SUPABASE_ANON_KEY: 'YOUR_SUPABASE_ANON_KEY',
-  PUBLIC_BASE_URL: ''
+  // SUPABASE_ANON_KEY: 'YOUR_SUPABASE_ANON_KEY',
+  SHEETS_URL: 'https://script.google.com/macros/s/AKfycbwVlW_4rlHfPpWSK1nP9_Gt-UPIXf_DfEvDTNExGlf9Rf9T9bikmVTiYQeCf6dNpH8EPw/exec',
+  PUBLIC_BASE_URL: 'https://erday2026.vercel.app'
 };
 
 const LIBS = {
@@ -16,7 +17,7 @@ const LIBS = {
 /*Utilities */
 const IDS = Array.from({length:10}, (_, i) => String(i+1).padStart(2, '0'));
 const params = new URLSearchParams(location.search);
-const DEMO = params.get('demo') === '1' || !/YOUR[-_]/.test(CONFIG.SUPABASE_URL + CONFIG.SUPABASE_ANON_KEY) === false;
+const DEMO = params.get('demo') === '1' || (!CONFIG.SHEETS_URL && !/YOUR[-_]/.test(CONFIG.SUPABASE_URL + CONFIG.SUPABASE_ANON_KEY) === false);
 const $ = (s, r=document) => r.querySelector(s);
 const $$ = (s, r=document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -166,6 +167,76 @@ class SupabaseAPI {
   resetLog() { return this._q(this.c.from('reset_log').select('*').order('created_at', { ascending: false }).limit(20)); }
 }
 
+/* Google Sheets (Apps Script) — ทุกเครื่องอ่าน/เขียนชีทเดียวกัน, ดึงข้อมูลซ้ำทุก POLL_MS */
+class SheetsAPI {
+  constructor() {
+    this.url = CONFIG.SHEETS_URL;
+    this.POLL_MS = 2500;
+    this.h = new Set();
+    this.timer = null;
+    this.last = { scores: {}, state: '', contestants: '' };
+  }
+  async _get(p) {
+    const u = new URL(this.url);
+    Object.entries(p).forEach(([k, v]) => u.searchParams.set(k, v));
+    const r = await fetch(u.toString());
+    const d = await r.json();
+    if (d && d.error) throw new Error(d.error);
+    return d;
+  }
+  async getState() { return (await this._get({ action: 'all' })).state; }
+  async getContestants() { return (await this._get({ action: 'all' })).contestants; }
+  async getScores(m) { return (await this._get({ action: 'all' })).scores[m]; }
+  castVote(id) { return this._get({ action: 'vote', id }); }
+  async deviceStatus() { return { can_vote: true }; }
+  subscribe(h) {
+    this.h.add(h);
+    if (!this.timer) this.timer = setInterval(() => this._poll(), this.POLL_MS);
+    this._poll();
+    return () => {
+      this.h.delete(h);
+      if (!this.h.size && this.timer) { clearInterval(this.timer); this.timer = null; }
+    };
+  }
+  async _poll() {
+    let d;
+    try { d = await this._get({ action: 'all' }); } catch { return; }
+    const st = JSON.stringify(d.state), ct = JSON.stringify(d.contestants);
+    const stChanged = st !== this.last.state, ctChanged = ct !== this.last.contestants;
+    this.last.state = st; this.last.contestants = ct;
+    for (const h of this.h) {
+      if (stChanged) h.onState && h.onState({ ...d.state });
+      if (ctChanged) for (const id of IDS) h.onContestant && h.onContestant({ ...d.contestants[id] });
+      for (const m of ['test', 'live']) {
+        for (const id of IDS) {
+          const key = m + id, v = d.scores[m][id];
+          if (this.last.scores[key] !== v) {
+            this.last.scores[key] = v;
+            h.onScore && h.onScore({ mode: m, contestant_id: id, votes: v });
+          }
+        }
+      }
+    }
+  }
+  async getSession() { return { user: { email: 'admin@sheets' } }; }
+  async signIn() { return true; }
+  async signOut() { return true; }
+  async isAdmin() { return true; }
+  setState(p) {
+    const q = { action: 'setState' };
+    ['active_mode', 'test_open', 'live_open'].forEach(k => { if (p[k] !== undefined && p[k] !== null) q[k] = p[k]; });
+    return this._get(q);
+  }
+  reset(mode) { return this._get({ action: 'reset', mode }); }
+  testAdd(id, n) { return this._get({ action: 'testAdd', id, amount: n }); }
+  updateContestant(id, name, photo) { return this._get({ action: 'updateContestant', id, name, photo: photo || '' }); }
+  async stats(mode) {
+    const s = (await this._get({ action: 'all' })).scores[mode];
+    return { total_votes: sum(s), unique_devices: sum(s), last_vote: new Date().toISOString() };
+  }
+  async resetLog() { return []; }
+}
+
 class DemoAPI {
   constructor() {
     const saved = localStorage.getItem('erday26_demo_state');
@@ -285,6 +356,8 @@ async function initApp() {
     // ribbon.textContent = 'MODE: DEMO PREVIEW (ไม่ได้เชื่อมต่อ Supabase จริง)';
     document.body.prepend(ribbon);
     api = new DemoAPI();
+  } else if (CONFIG.SHEETS_URL) {
+    api = new SheetsAPI();
   } else {
     try {
       await loadScript(LIBS.supabase);
