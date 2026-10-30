@@ -119,7 +119,7 @@ function sparkleBurst(x, y, n=36) {
 }
 
 function showView(viewId) {
-  ['view-hub', 'view-vote', 'view-scoreboard', 'view-qr', 'view-admin'].forEach(id => {
+  ['view-hub', 'view-vote', 'view-scoreboard', 'view-qr', 'view-admin', 'view-admin-login'].forEach(id => {
     const el = $('#' + id);
     if (el) el.classList.add('hidden');
   });
@@ -431,7 +431,8 @@ async function initApp() {
   const qr = params.get('qr');
   const admin = params.get('admin');
 
-  if (admin !== null) renderAdmin(api).catch(showSheetError);
+  // if (admin !== null) renderAdmin(api).catch(showSheetError);
+  if (admin !== null) renderAdminLogin(api);
   else if (qr !== null) renderQR(api).catch(showSheetError);
   else if (screen) renderScoreboard(api, screen).catch(showSheetError);
   else if (v) renderVote(api, v).catch(showSheetError);
@@ -700,6 +701,24 @@ async function renderQR(api) {
 
     qrGrid.appendChild(node);
   });
+}
+
+function renderAdminLogin(api) {
+  showView('view-admin-login');
+  $('#adminLoginBack').href = link({});
+  
+  $('#btnLogin').onclick = () => {
+    const u = $('#adminUser').value.trim();
+    const p = $('#adminPass').value.trim();
+    
+    if (u === 'AdminBre' && p === 'BrebabaAdmin') {
+      $('#adminUser').value = '';
+      $('#adminPass').value = '';
+      renderAdmin(api).catch(showSheetError); // รหัสถูก ดึงหน้า Admin ของจริงมาแสดง
+    } else {
+      toast('Username หรือ Password ไม่ถูกต้อง', true);
+    }
+  };
 }
 
 async function renderAdmin(api) {
