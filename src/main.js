@@ -171,11 +171,11 @@ class SupabaseAPI {
 class SheetsAPI {
   constructor() {
     this.url = CONFIG.SHEETS_URL;
-    this.POLL_MS = 2500; // ขยับเป็น 2.5 วิให้เซิร์ฟเวอร์ Google หายใจทัน
+    this.POLL_MS = 2500;
     this.h = new Set();
     this.timer = null;
     this.last = { scores: {}, state: '', contestants: '' };
-    this._isPolling = false; // ตัวล็อกป้องกันรีเควสต์ซ้อนกัน
+    this._isPolling = false; //กันรีเควสต์ซ้อน
   }
   
   async _get(p) {
@@ -211,12 +211,12 @@ class SheetsAPI {
         const m = stateObj.active_mode || 'live';
         const key = m + id;
         if (this.last.scores[key] !== undefined) {
-          this.last.scores[key] += 1; // Optimistic Update (โชว์คะแนนขึ้นทันที)
+          this.last.scores[key] += 1; // Optimistic Update score
           for (const h of this.h) h.onScore && h.onScore({ mode: m, contestant_id: id, votes: this.last.scores[key] });
         }
       } catch(e) {}
       
-      // สั่งดึงข้อมูลใหม่เบื้องหลัง แบบไม่ให้ชนกับรอบปกติ
+      //กันข้อมูลชน
       if(!this._isPolling) this._poll(); 
     }
     return res;
@@ -410,12 +410,12 @@ async function initApp() {
     document.body.classList.add('demo');
     const ribbon = document.createElement('div');
     // ribbon.className = 'demo-ribbon';
-    // ribbon.textContent = 'MODE: DEMO PREVIEW (ไม่ได้เชื่อมต่อ Supabase จริง)';
+    // ribbon.textContent = 'MODE: DEMO PREVIEW (unconnect Supabase)';
     document.body.prepend(ribbon);
     api = new DemoAPI();
   } else if (CONFIG.SHEETS_URL) {
     api = new SheetsAPI();
-    // เช็กการเชื่อมต่อชีทแบบไม่บล็อกหน้าจอ ถ้าไม่ได้ให้แสดงสาเหตุบนหน้าจอ
+    //unblock screen
     api._all().catch(showSheetError);
   } else {
     try {
@@ -591,15 +591,21 @@ async function renderVote(api, contestantId) {
 
 async function renderScoreboard(api, targetMode) {
   showView('view-scoreboard');
-  targetMode = targetMode === 'test' ? 'test' : 'live';
   $('#sbGrid').innerHTML = '<p style="grid-column:1/-1;text-align:center;padding:3rem 0;opacity:.8">กำลังโหลดข้อมูล...</p>';
 
+  // State update from Sheet to check mode
+  let state = await api.getState();
+  let currentMode = state.active_mode || 'live'; // ยึดตาม Sheet เป็นหลักเสมอ
+
   const modePill = $('#sbModePill');
-  modePill.className = `pill ${targetMode}`;
-  modePill.textContent = targetMode.toUpperCase();
+  const updateModeUI = () => {
+    modePill.className = `pill ${currentMode}`;
+    modePill.textContent = currentMode.toUpperCase();
+  };
+  updateModeUI();
 
   const contestants = await api.getContestants();
-  let scores = await api.getScores(targetMode);
+  let scores = await api.getScores(currentMode);
   const spotlightEl = $('#sbTop3Spotlight');
   const sbGrid = $('#sbGrid');
   const tpl = $('#tpl-sb-card');
@@ -648,8 +654,18 @@ async function renderScoreboard(api, targetMode) {
   update();
 
   api.subscribe({
+    // sheet chage
+    onState: async (newState) => {
+      if (newState.active_mode !== currentMode) {
+        currentMode = newState.active_mode;
+        updateModeUI();
+        scores = await api.getScores(currentMode);
+        update();
+      }
+    },
+    // present score
     onScore: (row) => {
-      if (row.mode === targetMode) {
+      if (row.mode === currentMode) {
         scores[row.contestant_id] = row.votes;
         update();
       }
